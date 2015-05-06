@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.ui.internal.console;
 
+import java.lang.reflect.Method;
+
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.DocumentEvent;
 import org.eclipse.jface.text.IDocument;
@@ -19,6 +21,8 @@ import org.eclipse.swt.events.VerifyEvent;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.console.ConsolePlugin;
 import org.eclipse.ui.console.IConsoleDocumentPartitioner;
+import org.eclipse.ui.console.IOConsole;
+import org.eclipse.ui.console.IOConsoleInputStream;
 import org.eclipse.ui.console.TextConsole;
 import org.eclipse.ui.console.TextConsoleViewer;
 
@@ -35,8 +39,25 @@ public class IOConsoleViewer extends TextConsoleViewer {
 
     private IDocumentListener fDocumentListener;
 
+    // echo characters locally
+    private boolean fEcho = true;
+
+	// direct access to InputStream, needed when echo == false.
+    private IOConsoleInputStream inputStream;
+
     public IOConsoleViewer(Composite parent, TextConsole console) {
         super(parent, console);
+        if (!isReadOnly()) {
+			try {
+				inputStream = ((IOConsole) console).getInputStream();
+			} catch (UnsupportedOperationException e) {
+				// so why isn't it read-only?
+			}
+        }
+    }
+
+    public void setEcho(boolean echo) {
+        fEcho = echo;
     }
 
     public boolean isAutoScroll() {
@@ -57,6 +78,13 @@ public class IOConsoleViewer extends TextConsoleViewer {
         IDocument doc = getDocument();
         String[] legalLineDelimiters = doc.getLegalLineDelimiters();
         String eventString = e.text;
+
+		if (!fEcho && inputStream != null) {
+			inputStream.appendData(eventString);
+			e.doit = false;
+			return;
+		}
+
         try {
             IConsoleDocumentPartitioner partitioner = (IConsoleDocumentPartitioner) doc.getDocumentPartitioner();
             if (!partitioner.isReadOnly(e.start)) {
@@ -126,6 +154,18 @@ public class IOConsoleViewer extends TextConsoleViewer {
         }
         if (document != null) {
             document.addDocumentListener(getDocumentListener());
+            /*
+			 * Set IOConsoleViewer on IOConsolePartitioner, so it can set cursor
+			 * position. Called by reflection to avoid changing interface.
+			 */
+			Object partitioner = document.getDocumentPartitioner();
+			try {
+				Method method = partitioner.getClass().getMethod(
+						"setViewer", new Class[] { IOConsoleViewer.class }); //$NON-NLS-1$
+				method.invoke(partitioner, new Object[] { this });
+			} catch (Exception e) {
+				// ignore
+			}
         }
     }
 

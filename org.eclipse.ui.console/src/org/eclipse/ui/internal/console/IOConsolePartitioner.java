@@ -101,6 +101,8 @@ public class IOConsolePartitioner implements IConsoleDocumentPartitioner, IDocum
 
     private int fBuffer;
 
+	private IOConsoleTermIO termIO;
+
 	public IOConsolePartitioner(IOConsoleInputStream inputStream, IOConsole console) {
 		this.inputStream = inputStream;
 		this.console = console;
@@ -128,6 +130,15 @@ public class IOConsolePartitioner implements IConsoleDocumentPartitioner, IDocum
         queueJob.setPriority(Job.INTERACTIVE);
 		queueJob.setRule(console.getSchedulingRule());
 		connected = true;
+		termIO = new IOConsoleTermIO(document, inputStream);
+	}
+
+	/*
+	 * Set IOConsoleViewer so that cursor can be repositioned after output.
+	 * Called by reflection from IOConsoleViewer.
+	 */
+	public void setViewer(IOConsoleViewer viewer) {
+		termIO.setViewer(viewer);
 	}
 
 	public int getHighWaterMark() {
@@ -579,7 +590,13 @@ public class IOConsolePartitioner implements IConsoleDocumentPartitioner, IDocum
     			firstOffset = document.getLength();
     			try {
     				if (buffer != null) {
-    					document.replace(firstOffset, 0, buffer.toString());
+						termIO.stty(buffer);
+						if (termIO.isCanonical()) {
+							document.replace(firstOffset, 0, buffer.toString());
+							termIO.moveCursorToEnd();
+						} else {
+							termIO.filterOutput(buffer);
+						}
     				}
     			} catch (BadLocationException e) {
     			}
